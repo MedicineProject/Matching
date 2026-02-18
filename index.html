@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AIESEC Matching Tool</title>
+
+  <!-- CSV parser -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- Pure-JS MILP solver -->
+  <script src="https://cdn.jsdelivr.net/npm/javascript-lp-solver@0.4.24/prod/solver.js"></script>
+
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
+  <link rel="apple-touch-icon" href="./favicon.png">
+
+  <style>
+    :root{
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted:#64748b;
+      --border:#e2e8f0;
+      --accent:#1f77ff; /* AIESEC-ish blue vibe */
+      --good:#16a34a;
+      --bad:#dc2626;
+      --shadow: 0 10px 30px rgba(15,23,42,.08);
+      --radius: 18px;
+    }
+  
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 18px;
+    }
+  
+    .wrap{
+      max-width: 980px;
+      margin: 0 auto;
+    }
+  
+    .topbar{
+      display:flex;
+      align-items:center;
+      gap: 14px;
+      padding: 18px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+  
+    .brand-logo{
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+  
+    .brand-title{
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+    .brand-sub{
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+  
+    h3{
+      margin: 18px 0 10px;
+      font-size: 14px;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+  
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 850px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+  
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+  
+    .row{ margin: 10px 0; }
+    label{ display:block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  
+    input[type="file"]{
+      width: 100%;
+      padding: 10px;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+  
+    input[type="number"]{
+      width: 110px;
+      padding: 10px 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      outline: none;
+    }
+  
+    .btns{
+      display:flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+  
+    button{
+      border: 1px solid transparent;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform .02s ease, opacity .2s ease;
+    }
+    button:active{ transform: translateY(1px); }
+    button:disabled{ opacity: .55; cursor:not-allowed; }
+  
+    .ghost{
+      background: white;
+      color: var(--text);
+      border-color: var(--border);
+    }
+  
+    pre{
+      margin:0;
+      background: #0b1220;
+      color: #e2e8f0;
+      padding: 14px;
+      border-radius: 14px;
+      overflow:auto;
+      line-height: 1.35;
+      font-size: 13px;
+    }
+  
+    .success{ color: var(--good); }
+    .error{ color: var(--bad); }
+  
+    .status-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .dot{
+      width:10px; height:10px; border-radius:999px; background:#94a3b8;
+    }
+    .dot.good{ background: var(--good); }
+    .dot.bad{ background: var(--bad); }
+  
+    .footer{
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 14px;
+      text-align:center;
+    }
+  </style>
+
+</head>
+
+<body>
+  <header class="topbar">
+    <img class="brand-logo" src="./favicon.png" alt="AIESEC logo">
+    <div>
+      <div class="brand-title">AIESEC Matching Tool</div>
+      <div class="brand-sub">Upload → Validate → Run → Download</div>
+    </div>
+  </header>
+
+  <h1>AIESEC Matching Tool</h1>
+
+  <h3>Upload files</h3>
+  <div class="row">EPs.csv: <input type="file" id="epsFile" accept=".csv"></div>
+  <div class="row">Locations.csv: <input type="file" id="locFile" accept=".csv"></div>
+
+  <h3>Parameters</h3>
+  <div class="box">
+    <div class="row">
+      <label>Duration (weeks)</label>
+      <input type="number" id="weeksDuration" value="6" min="1" max="52" />
+    </div>
+    <div class="row">
+      <label>Penalty unassigned</label>
+      <input type="number" id="penaltyUnassigned" value="5000" min="0" step="1" />
+    </div>
+    <div class="row">
+      <label>Preference points (1/2/3/4)</label>
+      <input type="number" id="p1" value="1000" step="1" /> /
+      <input type="number" id="p2" value="120" step="1" /> /
+      <input type="number" id="p3" value="20" step="1" /> /
+      <input type="number" id="p4" value="0" step="1" />
+    </div>
+    <div class="row">
+      <label>Score weight (tie-breaker)</label>
+      <input type="number" id="lambdaScore" value="5" min="0" step="1" />
+    </div>
+  </div>
+
+  <h3>Constraint switches</h3>
+  <div class="box">
+    <div class="row">
+      <label>Allow solo starts</label>
+      <input type="checkbox" id="allowSoloStarts" />
+    </div>
+    <div class="hint">If unchecked: forbids exactly 1 starter per (location, start Monday). Must be 0 or ≥2.</div>
+
+    <div class="row">
+      <label>Allow solo weeks</label>
+      <input type="checkbox" id="allowSoloWeeks" />
+    </div>
+    <div class="hint">If unchecked: forbids weeks where exactly 1 person is present at a location. Must be 0 or ≥2 each week.</div>
+
+    <div class="row">
+      <label>Allow friends to be split</label>
+      <input type="checkbox" id="allowFriendsSeparate" />
+    </div>
+    <div class="hint">If unchecked: friends must have same location + same start (or all unassigned).</div>
+  </div>
+
+  <div class="row">
+    <button id="btnValidate">Validate</button>
+    <button id="btnRun" disabled>Run Matching</button>
+  </div>
+
+  <h3>Status</h3>
+  <pre id="output">Ready. Upload files, then validate.</pre>
+
+<script>
+  // ---------------- UI helpers ----------------
+  const out = document.getElementById("output");
+  const btnValidate = document.getElementById("btnValidate");
+  const btnRun = document.getElementById("btnRun");
+  const dot = document.getElementById("dot");
+  const statusText = document.getElementById("statusText");
+  
+  function setStatus(msg, cls="") {
+    out.className = cls;
+    out.textContent = msg;
+  
+    if (statusText) statusText.textContent = cls === "error" ? "Error" : (cls === "success" ? "OK" : "Working");
+    if (dot) {
+      dot.className = "dot" + (cls === "error" ? " bad" : cls === "success" ? " good" : "");
+    }
+  }
+
+  function showError(msg) {
+    setStatus("ERROR: " + msg, "error");
+    throw new Error(msg);
+  }
+
+  // ---------------- CSV helpers ----------------
+  function parseCSV(file) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: r => resolve(r.data),
+        error: err => reject(err)
+      });
+    });
+  }
+
+  function downloadCSV(filename, rows) {
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+  }
+
+  // ---------------- Normalizers ----------------
+  function normalizeCode(s) {
+    return (s || "").toLowerCase().trim().replaceAll(" ", "_");
+  }
+
+  function isNoPreference(raw) {
+    const p = normalizeCode(raw);
+    return (
+      !p ||
+      [
+        "i_dont_care", "i_don't_care", "idc",
+        "dont_care", "don't_care",
+        "doesnt_care", "doesn't_care",
+        "does_not_matter", "doesnt_matter", "doesn't_matter",
+        "no_preference", "no_pref", "any",
+        "n/a", "na", "none", "-"
+      ].includes(p)
+    );
+  }
+
+  function normalizeName(s) {
+    return (s || "").toLowerCase().trim().replace(/\s+/g, " ");
+  }
+
+  function normGender(s) {
+    const q = (s || "").toLowerCase().trim();
+    if (["f","female","vrouw","woman","girl","vrouwelijk"].includes(q)) return "F";
+    if (["m","male","man","boy","jongen","mannelijk"].includes(q)) return "M";
+    return "X";
+  }
+
+  // Accept yyyy-mm-dd and dd/mm/yyyy or mm/dd/yyyy
+  function parseDateFlexible(str) {
+    if (!str) return null;
+    str = String(str).trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const d = new Date(str);
+      return isNaN(d) ? null : d;
+    }
+
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+      const [a,b,c] = str.split("/");
+      const d1 = new Date(`${c}-${b}-${a}`); // dd/mm/yyyy
+      if (!isNaN(d1)) return d1;
+      const d2 = new Date(`${c}-${a}-${b}`); // mm/dd/yyyy
+      if (!isNaN(d2)) return d2;
+    }
+
+    return null;
+  }
+
+  // Dates helpers
+  function addDays(d, days) {
+    const x = new Date(d.getTime());
+    x.setDate(x.getDate() + days);
+    return x;
+  }
+  function addWeeks(d, w) { return addDays(d, 7*w); }
+  function dateToISO(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  function nextMonday(d) {
+    // JS: Sunday=0 ... Saturday=6. Monday=1.
+    const day = d.getDay();
+    const offset = (day === 1) ? 0 : ((8 - day) % 7);
+    return addDays(d, offset);
+  }
+  function mondaysBetween(startMonday, endMonday) {
+    const out = [];
+    let cur = new Date(startMonday.getTime());
+    while (cur <= endMonday) {
+      out.push(new Date(cur.getTime()));
+      cur = addWeeks(cur, 1);
+    }
+    return out;
+  }
+  function lastStartMondayGivenLatestEnd(latestEnd, weeksDuration) {
+    const d = addWeeks(latestEnd, -weeksDuration);
+    return nextMonday(d);
+  }
+
+  // ---------------- Data ----------------
+  let epsData = null;
+  let locData = null;
+
+  function runValidation() {
+    const requiredEPCols = [
+      "ep_id","full_name","gender","earliest_start_date","latest_end_date",
+      "preferred_location_1","preferred_location_2","preferred_location_3","preferred_location_4",
+      "wants_pair","pair_with_full_name","score"
+    ];
+    const requiredLocCols = ["loc_code","capacity_total"];
+
+    const epHeaders = Object.keys(epsData?.[0] || {});
+    const locHeaders = Object.keys(locData?.[0] || {});
+
+    requiredEPCols.forEach(col => {
+      if (!epHeaders.includes(col)) showError(`EPs.csv missing column "${col}"`);
+    });
+    requiredLocCols.forEach(col => {
+      if (!locHeaders.includes(col)) showError(`Locations.csv missing column "${col}"`);
+    });
+
+    // duplicates EP
+    const epIds = epsData.map(r => (r.ep_id || "").trim());
+    const dupEP = epIds.find((id, i) => id && epIds.indexOf(id) !== i);
+    if (dupEP) showError(`Duplicate ep_id found: ${dupEP}`);
+
+    // duplicates locations
+    const locCodes = locData.map(r => normalizeCode(r.loc_code));
+    const dupLoc = locCodes.find((id, i) => id && locCodes.indexOf(id) !== i);
+    if (dupLoc) showError(`Duplicate loc_code found: ${dupLoc}`);
+
+    // dates + range
+    epsData.forEach((row, i) => {
+      const start = parseDateFlexible(row.earliest_start_date);
+      const end = parseDateFlexible(row.latest_end_date);
+      if (!start) showError(`Row ${i+2}: earliest_start_date invalid`);
+      if (!end) showError(`Row ${i+2}: latest_end_date invalid`);
+      if (start > end) showError(`Row ${i+2}: earliest_start_date after latest_end_date`);
+    });
+
+    // preference location existence
+    const locSet = new Set(locCodes);
+    epsData.forEach((row, i) => {
+      for (let k=1;k<=4;k++) {
+        const raw = row[`preferred_location_${k}`];
+        if (isNoPreference(raw)) continue;
+        const pref = normalizeCode(raw);
+        if (!locSet.has(pref)) showError(`Row ${i+2}: preferred_location_${k} "${raw}" not in Locations.csv`);
+      }
+    });
+
+    setStatus("Validation successful. You can now run matching.", "success");
+    btnRun.disabled = false;
+  }
+
+  // ---------------- Preference scoring ----------------
+  function prefScore(epRow, locCode, PREF_POINTS) {
+    const raw = [1,2,3,4].map(k => epRow[`preferred_location_${k}`] || "");
+    const cleaned = [];
+    for (const p of raw) {
+      const q = normalizeCode(p);
+      if (!q) continue;
+      if (isNoPreference(q)) continue;
+      cleaned.push(q);
+    }
+    const code = normalizeCode(locCode);
+    const idx = cleaned.indexOf(code);
+    if (idx >= 0) return PREF_POINTS[idx+1] ?? 0;
+    return 0;
+  }
+
+  // ---------------- Friends: build groups (connected components) ----------------
+  function buildFriendGroups(EPs) {
+    const nameToIds = new Map();
+    for (const e of EPs) {
+      const nm = normalizeName(e.full_name);
+      if (!nameToIds.has(nm)) nameToIds.set(nm, []);
+      nameToIds.get(nm).push(e.ep_id);
+    }
+
+    const adj = new Map();
+    function addEdge(a, b) {
+      if (!adj.has(a)) adj.set(a, new Set());
+      if (!adj.has(b)) adj.set(b, new Set());
+      adj.get(a).add(b);
+      adj.get(b).add(a);
+    }
+
+    for (const e of EPs) {
+      if (!e.wants_pair) continue;
+      const raw = (e.pair_with_full_name || "").split(",").map(x => normalizeName(x)).filter(Boolean);
+      for (const fn of raw) {
+        const ids = nameToIds.get(fn) || [];
+        if (ids.length === 1 && ids[0] !== e.ep_id) addEdge(e.ep_id, ids[0]);
+      }
+    }
+
+    const visited = new Set();
+    const groups = [];
+    for (const e of EPs) {
+      const start = e.ep_id;
+      if (!adj.has(start) || visited.has(start)) continue;
+
+      const stack = [start];
+      visited.add(start);
+      const comp = new Set();
+
+      while (stack.length) {
+        const u = stack.pop();
+        comp.add(u);
+        for (const v of adj.get(u)) {
+          if (!visited.has(v)) {
+            visited.add(v);
+            stack.push(v);
+          }
+        }
+      }
+      if (comp.size >= 2) groups.push(Array.from(comp).sort());
+    }
+    return groups;
+  }
+
+  // ---------------- Build and solve MILP ----------------
+  function buildAndSolveModel() {
+    if (!window.solver) showError("MILP solver library did not load. (solver.js missing)");
+
+    const WEEKS_DURATION = Number(document.getElementById("weeksDuration").value || 6);
+    const PENALTY_UNASSIGNED = Number(document.getElementById("penaltyUnassigned").value || 5000);
+    const LAMBDA_SCORE = Number(document.getElementById("lambdaScore").value || 5);
+    const PREF_POINTS = {
+      1: Number(document.getElementById("p1").value || 1000),
+      2: Number(document.getElementById("p2").value || 120),
+      3: Number(document.getElementById("p3").value || 20),
+      4: Number(document.getElementById("p4").value || 0),
+    };
+
+    const allowSoloStarts = document.getElementById("allowSoloStarts").checked;
+    const allowSoloWeeks = document.getElementById("allowSoloWeeks").checked;
+    const allowFriendsSeparate = document.getElementById("allowFriendsSeparate").checked;
+
+    // Normalize locations
+    const Locations = locData.map(r => ({
+      loc_code: normalizeCode(r.loc_code),
+      capacity_total: Number(r.capacity_total),
+      cap_female_max: (r.cap_female_max === "" || r.cap_female_max == null) ? null : Number(r.cap_female_max),
+      cap_male_max: (r.cap_male_max === "" || r.cap_male_max == null) ? null : Number(r.cap_male_max),
+      notes: r.notes || ""
+    }));
+
+    const locCodes = Locations.map(L => L.loc_code);
+    const locByCode = Object.fromEntries(Locations.map(L => [L.loc_code, L]));
+
+    // Normalize EPs and compute allowed starts
+    const EPs = epsData.map(r => {
+      const earliest = parseDateFlexible(r.earliest_start_date);
+      const latest = parseDateFlexible(r.latest_end_date);
+      const scoreNum = Number(String(r.score || "").replace(",", "."));
+      return {
+        ep_id: (r.ep_id || "").trim(),
+        full_name: r.full_name || "",
+        gender: normGender(r.gender),
+        earliest_start_date: earliest,
+        latest_end_date: latest,
+        wants_pair: String(r.wants_pair || "").trim().toLowerCase() === "yes",
+        pair_with_full_name: r.pair_with_full_name || "",
+        score: Number.isFinite(scoreNum) ? Math.max(0, Math.min(10, scoreNum)) : 0,
+        preferred_location_1: r.preferred_location_1 || "",
+        preferred_location_2: r.preferred_location_2 || "",
+        preferred_location_3: r.preferred_location_3 || "",
+        preferred_location_4: r.preferred_location_4 || "",
+      };
+    });
+
+    const EP_allowed = new Map(); // ep_id -> [Date Mondays]
+    const allStartMondaysISO = [];
+    for (const e of EPs) {
+      const startM = nextMonday(e.earliest_start_date);
+      const lastStart = lastStartMondayGivenLatestEnd(e.latest_end_date, WEEKS_DURATION);
+      const allowed = (startM <= lastStart) ? mondaysBetween(startM, lastStart) : [];
+      EP_allowed.set(e.ep_id, allowed);
+      for (const m of allowed) allStartMondaysISO.push(dateToISO(m));
+    }
+    if (allStartMondaysISO.length === 0) showError("No feasible Monday starts found. Check date windows.");
+
+    const uniqueStartMondays = Array.from(new Set(allStartMondaysISO)).sort();
+
+    // Build global weeks grid (Mondays) for weekly capacity and solo-week rule
+    // weeks from minStart to maxStart + (duration-1) weeks
+    const minStartISO = uniqueStartMondays[0];
+    const maxStartISO = uniqueStartMondays[uniqueStartMondays.length - 1];
+    const minStartDate = new Date(minStartISO);
+    const maxStartDate = new Date(maxStartISO);
+    const maxWeekMonday = addWeeks(maxStartDate, WEEKS_DURATION - 1);
+
+    const weeks = mondaysBetween(minStartDate, maxWeekMonday); // array of Date mondays
+    const weeksISO = weeks.map(dateToISO);
+    const weekIndex = new Map();
+    weeksISO.forEach((iso, i) => weekIndex.set(iso, i));
+
+    // ---------------- Model object ----------------
+    const model = { optimize: "obj", opType: "max", constraints: {}, variables: {}, ints: {} };
+
+    function ensureConstraint(name, def) {
+      if (!model.constraints[name]) model.constraints[name] = def;
+    }
+    function addCoef(varName, constraintName, coef) {
+      if (!model.variables[varName]) model.variables[varName] = { obj: 0 };
+      model.variables[varName][constraintName] = (model.variables[varName][constraintName] || 0) + coef;
+    }
+    function setObj(varName, coef) {
+      if (!model.variables[varName]) model.variables[varName] = { obj: 0 };
+      model.variables[varName].obj = (model.variables[varName].obj || 0) + coef;
+    }
+    function makeBin(varName) {
+      model.ints[varName] = 1;
+      ensureConstraint(`bin_lo_${varName}`, { min: 0 });
+      ensureConstraint(`bin_hi_${varName}`, { max: 1 });
+      addCoef(varName, `bin_lo_${varName}`, 1);
+      addCoef(varName, `bin_hi_${varName}`, 1);
+    }
+
+    // helper: does week w include someone who started at sISO?
+    function occupiesWeek(startISO, weekISO) {
+      const si = weekIndex.get(startISO);
+      const wi = weekIndex.get(weekISO);
+      if (si == null || wi == null) return false;
+      return (si <= wi && wi < si + WEEKS_DURATION);
+    }
+
+    // ---------------- Variables + EP assignment constraints ----------------
+    for (const e of EPs) {
+      const c = `ep_one_${e.ep_id}`;
+      ensureConstraint(c, { equal: 1 });
+
+      const uName = `u|${e.ep_id}`;
+      makeBin(uName);
+      addCoef(uName, c, 1);
+      setObj(uName, -PENALTY_UNASSIGNED);
+
+      for (const l of locCodes) {
+        for (const s of (EP_allowed.get(e.ep_id) || [])) {
+          const sISO = dateToISO(s);
+          const xName = `x|${e.ep_id}|${l}|${sISO}`;
+          makeBin(xName);
+          addCoef(xName, c, 1);
+
+          const sc = prefScore(e, l, PREF_POINTS);
+          if (sc !== 0) setObj(xName, sc);
+
+          const first = normalizeCode(e.preferred_location_1);
+          if (first && first === l) setObj(xName, 1000000);
+
+          setObj(xName, LAMBDA_SCORE * e.score);
+        }
+      }
+    }
+
+    // ---------------- Friends constraint (optional) ----------------
+    if (!allowFriendsSeparate) {
+      const groups = buildFriendGroups(EPs);
+
+      for (let gi = 0; gi < groups.length; gi++) {
+        const comp = groups[gi];
+
+        // common starts intersection (ISO)
+        let common = null;
+        for (const eid of comp) {
+          const arr = (EP_allowed.get(eid) || []).map(dateToISO);
+          const set = new Set(arr);
+          common = (common == null) ? set : new Set([...common].filter(x => set.has(x)));
+        }
+        const commonStarts = Array.from(common || []).sort();
+        const ref = comp[0];
+
+        if (commonStarts.length === 0) {
+          // force all unassigned together + forbid all x
+          for (const eid of comp) {
+            const eq = `grp_u_eq_${gi}_${eid}`;
+            ensureConstraint(eq, { equal: 0 });
+            addCoef(`u|${eid}`, eq, 1);
+            addCoef(`u|${ref}`, eq, -1);
+
+            for (const l of locCodes) {
+              for (const s of (EP_allowed.get(eid) || [])) {
+                const sISO = dateToISO(s);
+                const xName = `x|${eid}|${l}|${sISO}`;
+                if (!model.variables[xName]) continue;
+                const forbid = `grp_forbid_${gi}_${eid}_${l}_${sISO}`;
+                ensureConstraint(forbid, { equal: 0 });
+                addCoef(xName, forbid, 1);
+              }
+            }
+          }
+          continue;
+        }
+
+        // y vars and ties
+        const yNames = [];
+        for (const l of locCodes) {
+          for (const sISO of commonStarts) {
+            const y = `y|g${gi}|${l}|${sISO}`;
+            makeBin(y);
+            yNames.push(y);
+
+            for (const eid of comp) {
+              const xName = `x|${eid}|${l}|${sISO}`;
+              if (!model.variables[xName]) continue;
+              const eq = `grp_x_eq_${gi}_${eid}_${l}_${sISO}`;
+              ensureConstraint(eq, { equal: 0 });
+              addCoef(xName, eq, 1);
+              addCoef(y, eq, -1);
+            }
+          }
+        }
+
+        // u equal across group
+        for (const eid of comp) {
+          const eq = `grp_u_eq2_${gi}_${eid}`;
+          ensureConstraint(eq, { equal: 0 });
+          addCoef(`u|${eid}`, eq, 1);
+          addCoef(`u|${ref}`, eq, -1);
+        }
+
+        // choose exactly one placement or unassigned: sum_y + u_ref == 1
+        const choice = `grp_choice_${gi}`;
+        ensureConstraint(choice, { equal: 1 });
+        for (const y of yNames) addCoef(y, choice, 1);
+        addCoef(`u|${ref}`, choice, 1);
+      }
+    }
+
+    // ---------------- Weekly capacity (REAL capacity constraint) ----------------
+    // For each (location, week), occupancy <= capacity_total
+    // Also apply gender caps per week, like your Python version.
+    for (const l of locCodes) {
+      const cap = locByCode[l].capacity_total;
+      const capF = locByCode[l].cap_female_max;
+      const capM = locByCode[l].cap_male_max;
+
+      for (const wISO of weeksISO) {
+        const c = `cap_week_${l}_${wISO}`;
+        ensureConstraint(c, { max: cap });
+
+        const cF = (capF != null) ? `capF_week_${l}_${wISO}` : null;
+        const cM = (capM != null) ? `capM_week_${l}_${wISO}` : null;
+        if (cF) ensureConstraint(cF, { max: capF });
+        if (cM) ensureConstraint(cM, { max: capM });
+
+        // add all x that occupy this week
+        for (const e of EPs) {
+          for (const s of (EP_allowed.get(e.ep_id) || [])) {
+            const sISO = dateToISO(s);
+            if (!occupiesWeek(sISO, wISO)) continue;
+
+            const xName = `x|${e.ep_id}|${l}|${sISO}`;
+            if (!model.variables[xName]) continue;
+
+            addCoef(xName, c, 1);
+            if (cF && e.gender === "F") addCoef(xName, cF, 1);
+            if (cM && e.gender === "M") addCoef(xName, cM, 1);
+          }
+        }
+      }
+    }
+
+    // ---------------- No solo weeks (optional) ----------------
+    // If OFF: for each (l,w) occupancy is 0 or >=2.
+    if (!allowSoloWeeks) {
+      for (const l of locCodes) {
+        const cap = locByCode[l].capacity_total;
+
+        for (const wISO of weeksISO) {
+          // collect x that occupy this week
+          const occVars = [];
+          for (const e of EPs) {
+            for (const s of (EP_allowed.get(e.ep_id) || [])) {
+              const sISO = dateToISO(s);
+              if (!occupiesWeek(sISO, wISO)) continue;
+              const xName = `x|${e.ep_id}|${l}|${sISO}`;
+              if (model.variables[xName]) occVars.push(xName);
+            }
+          }
+          if (occVars.length === 0) continue;
+
+          const o = `openW|${l}|${wISO}`;
+          makeBin(o);
+
+          // sum_occ - 2*o >= 0
+          const cMin = `noSoloW_min_${l}_${wISO}`;
+          ensureConstraint(cMin, { min: 0 });
+          for (const xName of occVars) addCoef(xName, cMin, 1);
+          addCoef(o, cMin, -2);
+
+          // sum_occ - cap*o <= 0
+          const cMax = `noSoloW_max_${l}_${wISO}`;
+          ensureConstraint(cMax, { max: 0 });
+          for (const xName of occVars) addCoef(xName, cMax, 1);
+          addCoef(o, cMax, -cap);
+        }
+      }
+    }
+
+    // ---------------- No solo starts (optional) ----------------
+    // If OFF: for each (l, startMonday) starters is 0 or >=2
+    if (!allowSoloStarts) {
+      for (const l of locCodes) {
+        const cap = locByCode[l].capacity_total;
+
+        for (const sISO of uniqueStartMondays) {
+          const starterVars = [];
+          for (const e of EPs) {
+            const xName = `x|${e.ep_id}|${l}|${sISO}`;
+            if (model.variables[xName]) starterVars.push(xName);
+          }
+          if (starterVars.length === 0) continue;
+
+          const o = `openS|${l}|${sISO}`;
+          makeBin(o);
+
+          // sum_start - 2*o >= 0
+          const cMin = `noSoloS_min_${l}_${sISO}`;
+          ensureConstraint(cMin, { min: 0 });
+          for (const xName of starterVars) addCoef(xName, cMin, 1);
+          addCoef(o, cMin, -2);
+
+          // sum_start - cap*o <= 0
+          const cMax = `noSoloS_max_${l}_${sISO}`;
+          ensureConstraint(cMax, { max: 0 });
+          for (const xName of starterVars) addCoef(xName, cMax, 1);
+          addCoef(o, cMax, -cap);
+        }
+      }
+    }
+
+    // ---------------- Solve ----------------
+    setStatus("Solving…", "");
+    const result = window.solver.Solve(model);
+    if (!result.feasible) {
+      showError(
+        "No feasible solution found.\n" +
+        "Try enabling one of the switches (solo starts / solo weeks / friends can split) or increase capacity."
+      );
+    }
+
+    // ---------------- Build output ----------------
+    const assignments = [];
+    for (const e of EPs) {
+      let placed = null;
+
+      for (const l of locCodes) {
+        for (const s of (EP_allowed.get(e.ep_id) || [])) {
+          const sISO = dateToISO(s);
+          const xName = `x|${e.ep_id}|${l}|${sISO}`;
+          if ((result[xName] || 0) > 0.5) {
+            placed = { loc: l, startISO: sISO };
+            break;
+          }
+        }
+        if (placed) break;
+      }
+
+      let endFridayISO = "";
+      if (placed) {
+        const startDate = new Date(placed.startISO);
+        const endFriday = addDays(addWeeks(startDate, WEEKS_DURATION - 1), 4);
+        endFridayISO = dateToISO(endFriday);
+      }
+
+      assignments.push({
+        ep_id: e.ep_id,
+        full_name: e.full_name,
+        gender: e.gender,
+        score: e.score,
+        location: placed ? placed.loc : "",
+        start_monday: placed ? placed.startISO : "",
+        end_friday: placed ? endFridayISO : "",
+        first_choice: normalizeCode(e.preferred_location_1),
+      });
+    }
+
+    return assignments;
+  }
+
+  // ---------------- Wire buttons ----------------
+  btnValidate.addEventListener("click", async () => {
+    const epsFile = document.getElementById("epsFile").files[0];
+    const locFile = document.getElementById("locFile").files[0];
+    if (!epsFile || !locFile) showError("Please upload both EPs.csv and Locations.csv");
+
+    setStatus("Reading CSV files…", "");
+    epsData = await parseCSV(epsFile);
+    locData = await parseCSV(locFile);
+
+    runValidation();
+  });
+
+  btnRun.addEventListener("click", async () => {
+    if (!epsData || !locData) showError("Please validate files first.");
+
+    const assignments = buildAndSolveModel();
+    downloadCSV("assignment.csv", assignments);
+    setStatus("Done. assignment.csv downloaded.", "success");
+  });
+
+  // Initial sanity for solver load
+  if (!window.solver) {
+    setStatus(
+      "ERROR: MILP solver did not load.\n" +
+      "If you opened via file://, switch to GitHub Pages https.\n" +
+      "If you have an adblocker, allow cdn.jsdelivr.net.\n",
+      "error"
+    );
+  }
+</script>
+</body>
+</html>
